@@ -80,6 +80,8 @@ byte letters[][CHARACTER_WIDTH] =
     {0x00, 0x41, 0x61, 0x51, 0x49, 0x49, 0x45, 0x43}  /* Z */
 };
 
+byte space[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+
 sh1106_lcd *sh1106_lcd::m_pInstance = NULL;
 
 sh1106_lcd *sh1106_lcd::getInstance()
@@ -249,6 +251,10 @@ void sh1106_lcd::PrintData(char *data, bool incrementLine)
             {
                 dataByte -= 'a'; // Normalize to our cap array
                 pPtr = (byte *)&letters[dataByte];
+            }
+            else if (dataByte == ' ')
+            {
+                pPtr = (byte *)&space;
             }
             
             if (pPtr != NULL)
