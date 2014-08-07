@@ -14,7 +14,7 @@
 #define SH1106_ADDR1 0x3C // write data
 #define SH1106_ADDR2 0x3D // read data
 #define SH1106_COMMAND 0x00
-#define SH1106_DATAA 0x40
+#define SH1106_DATA 0x40
 
 /*
  * Commands for the display
@@ -49,6 +49,14 @@
 #define SCREEN_WIDTH    128  // document said 132 however testing puts it at 128
 #define SCREEN_HEIGHT   64
 
+typedef enum
+{
+    StartSend = 0,
+    MidSend,
+    FinishSend,
+    Complete
+} SendState;
+
 class sh1106_lcd
 {
 public:
@@ -58,14 +66,19 @@ public:
     void ClearScreen();
     void FillScreen(byte fillData);
     void DrawPixel(byte x, byte y, bool on);
+    void DrawRectangle(byte x1, byte y1, byte x2, byte y2);
+    void DrawRectangle(byte x1, byte y1, byte x2, byte y2, byte thickness);
+    void FillRectangle(byte x1, byte y1, byte x2, byte y2);
+    void DrawLine(byte x1, byte y1, byte x2, byte y2);
     void Print(char *data);
     void PrintLine(char *data);
     void Show();
     
 private:
     void Initialize();
-    byte SendCommand(byte command);
-    byte SendData(byte data);
+    byte SendByte(byte data, SendState state);
+    byte SendCommand(byte command, SendState state = Complete);
+    byte SendData(byte data, SendState state = Complete);
     void PrintData(char *data, bool incrementLine);
     
 private:

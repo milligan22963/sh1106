@@ -98,52 +98,64 @@ void sh1106_lcd::Initialize()
 {
     Wire.begin(); // begin without address as a master device
     
-    SendCommand(DISPLAY_OFF);
-    SendCommand(SET_MEMORY_ADDRESSING_MODE);
-    SendCommand(PAGE);
-    SendCommand(SET_PAGE_ADDRESS); // start at page address 0
-    SendCommand(SET_COM_OUTPUT_SCAN_DIRECTION);
-    SendCommand(LOW_COLUMN_ADDRESS);
-    SendCommand(HIGH_COLUMN_ADDRESS);
-    SendCommand(START_LINE_ADDRESS);
-    SendCommand(SET_CONTRAST_CTRL_REG);
-    SendCommand(0x7F);
-    SendCommand(SET_SEGMENT_REMAP);
-    SendCommand(SET_NORMAL_DISPLAY);
-    SendCommand(SET_MULTIPLEX_RATIO);
-    SendCommand(0x3F);
-    SendCommand(OUTPUT_FOLLOWS_RAM);
-    SendCommand(SET_DISPLAY_OFFSET);
-    SendCommand(0x00); // no offset
-    SendCommand(SET_DISPLAY_CLOCK_DIVIDE);
-    SendCommand(0xF0);
-    SendCommand(SET_PRE_CHARGE_PERIOD);
-    SendCommand(0x22);
-    SendCommand(SET_COM_PINS_HARDWARE_CONFIG);
-    SendCommand(0x12);
-    SendCommand(SET_VCOMH);
-    SendCommand(0x20); // 0.77xVcc
-    SendCommand(SET_DC_DC_ENABLE);
-    SendCommand(0x14);
+    SendCommand(DISPLAY_OFF, StartSend);
+    SendCommand(SET_MEMORY_ADDRESSING_MODE, MidSend);
+    SendCommand(PAGE, MidSend);
+    SendCommand(SET_PAGE_ADDRESS, MidSend); // start at page address 0
+    SendCommand(SET_COM_OUTPUT_SCAN_DIRECTION, MidSend);
+    SendCommand(LOW_COLUMN_ADDRESS, MidSend);
+    SendCommand(HIGH_COLUMN_ADDRESS, MidSend);
+    SendCommand(START_LINE_ADDRESS, MidSend);
+    SendCommand(SET_CONTRAST_CTRL_REG, MidSend);
+    SendCommand(0x7F, MidSend);
+    SendCommand(SET_SEGMENT_REMAP, MidSend);
+    SendCommand(SET_NORMAL_DISPLAY, MidSend);
+    SendCommand(SET_MULTIPLEX_RATIO, MidSend);
+    SendCommand(0x3F, MidSend);
+    SendCommand(OUTPUT_FOLLOWS_RAM, MidSend);
+    SendCommand(SET_DISPLAY_OFFSET, MidSend);
+    SendCommand(0x00, MidSend); // no offset
+    SendCommand(SET_DISPLAY_CLOCK_DIVIDE, MidSend);
+    SendCommand(0xF0, MidSend);
+    SendCommand(SET_PRE_CHARGE_PERIOD, MidSend);
+    SendCommand(0x22, MidSend);
+    SendCommand(SET_COM_PINS_HARDWARE_CONFIG, MidSend);
+    SendCommand(0x12, MidSend);
+    SendCommand(SET_VCOMH, MidSend);
+    SendCommand(0x20, MidSend); // 0.77xVcc
+    SendCommand(SET_DC_DC_ENABLE, MidSend);
+    SendCommand(0x14, MidSend);
     
-    SendCommand(DISPLAY_ON);
+    SendCommand(DISPLAY_ON, FinishSend);
     
     memset(m_screen, 0, SCREEN_WIDTH * MAX_PAGE_COUNT);
     m_currentLine = 0;
-    m_cursor = 2;
+    m_cursor = 0;
 }
 
 void sh1106_lcd::Show()
 {
+    SendState state = StartSend;
+    
     for (int index = 0; index < MAX_PAGE_COUNT; index++)
     {
-        SendCommand(SET_PAGE_ADDRESS + index);
-        SendCommand(0x00); // low column start address
-        SendCommand(0x10); // high column start address
+        SendCommand(SET_PAGE_ADDRESS + index, StartSend);
+        SendCommand(0x00, MidSend); // low column start address
+        SendCommand(0x10, FinishSend); // high column start address
         for (int pixel = 0; pixel < SCREEN_WIDTH; pixel++)
         {
             SendData(m_screen[index][pixel]);
+            
+            if (state == StartSend)
+            {
+                state = MidSend;
+            }
+            else if (pixel == (SCREEN_WIDTH - 2))
+            {
+                state = FinishSend;
+            }
         }
+        state = StartSend;
     }
 }
 
@@ -158,7 +170,7 @@ void sh1106_lcd::FillScreen(byte fillData)
     }
 
     m_currentLine = 0;
-    m_cursor = 2;
+    m_cursor = 0;
     
     Show();
 }
@@ -190,6 +202,248 @@ void sh1106_lcd::DrawPixel(byte x, byte y, bool on)
             else
             {
                 m_screen[pageId][x] &= ~(1 << bitOffset); // turn this bit off
+            }
+        }
+    }
+}
+
+void sh1106_lcd::DrawRectangle(byte x1, byte y1, byte x2, byte y2)
+{
+    byte pageId1 = y1 / MAX_PAGE_COUNT;
+    byte pageId2 = y2 / MAX_PAGE_COUNT;
+    byte bit1 = 1 << (y1 % MAX_PAGE_COUNT);
+    byte bit2 = 1 << (y2 % MAX_PAGE_COUNT);
+    
+    if ((pageId1 < MAX_PAGE_COUNT) && (pageId2 < MAX_PAGE_COUNT))
+    {
+        if (x1 >= SCREEN_WIDTH)
+        {
+            x1 = SCREEN_WIDTH - 1;
+        }
+        
+        if (x2 >= SCREEN_WIDTH)
+        {
+            x2 = SCREEN_WIDTH - 1;
+        }
+        
+        if (x1 == x2)
+        {
+            x2++; // give at least one
+        }
+        // Sets top and bottom line
+        for (byte xCord = x1; xCord < x2; xCord++)
+        {
+            m_screen[pageId1][xCord] |= bit1;
+            m_screen[pageId2][xCord] |= bit2;
+        }
+        
+        if (y2 < y1)
+        {
+            byte temp = y1;
+            y1 = y2;
+            y2 = temp;
+        }
+        
+        // Sets left and right line
+        for (/* set above */; y1 < y2; y1++)
+        {
+            m_screen[pageId1][x1] |= bit1;
+            m_screen[pageId1][x2] |= bit1;
+            bit1 <<= 1;
+            if (bit1 == 0)
+            {
+                bit1++;
+                    
+                pageId1++; // move to next page we just rolled
+                    
+                if (pageId1 >= MAX_PAGE_COUNT)
+                {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+void sh1106_lcd::DrawRectangle(byte x1, byte y1, byte x2, byte y2, byte thickness)
+{
+    // Cheat and call it a couple of times
+    // otherwise my head hurts tring to get the bits right...
+    for (byte index = 0; index < thickness; index++)
+    {
+        DrawRectangle(x1, y1, x2, y2);
+        x1++;
+        x2--;
+        y1++;
+        y2--;
+        
+        if (x1 >= SCREEN_WIDTH || x2 >= SCREEN_WIDTH || y1 >= SCREEN_HEIGHT || y2 >= SCREEN_HEIGHT)
+        {
+            break;
+        }
+    }
+}
+
+void sh1106_lcd::FillRectangle(byte x1, byte y1, byte x2, byte y2)
+{
+    byte pageId1 = y1 / MAX_PAGE_COUNT;
+    byte pageId2 = y2 / MAX_PAGE_COUNT;
+    byte bit1 = 1 << (y1 % MAX_PAGE_COUNT);
+    byte bit2 = 1 << (y2 % MAX_PAGE_COUNT);
+    
+    if ((pageId1 < MAX_PAGE_COUNT) && (pageId2 < MAX_PAGE_COUNT))
+    {
+        if (x1 >= SCREEN_WIDTH)
+        {
+            x1 = SCREEN_WIDTH - 1;
+        }
+        
+        if (x2 >= SCREEN_WIDTH - 1)
+        {
+            x2 = SCREEN_WIDTH;
+        }
+        
+        if (x1 == x2)
+        {
+            x2++;
+        }
+        
+        if (y2 < y1)
+        {
+            byte temp = y1;
+            y1 = y2;
+            y2 = temp;
+        }
+        
+        for (/* set above */; y1 < y2; y1++)
+        {
+            for (byte xCord = x1; xCord < x2; xCord++)
+            {
+                m_screen[pageId1][xCord] |= bit1;
+            }
+                
+            bit1 <<= 1;
+            if (bit1 == 0)
+            {
+                bit1++;
+
+                pageId1++; // move to next page we just rolled
+                    
+                if (pageId1 >= MAX_PAGE_COUNT)
+                {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+void sh1106_lcd::DrawLine(byte x1, byte y1, byte x2, byte y2)
+{
+    byte pageId1 = y1 / MAX_PAGE_COUNT;
+    byte pageId2 = y2 / MAX_PAGE_COUNT;
+    byte bit1 = 1 << (y1 % MAX_PAGE_COUNT);
+    byte bit2 = 1 << (y2 % MAX_PAGE_COUNT);
+    byte dy = y2 - y1;
+    byte dx = x2 - x1;
+    
+    if (x1 > x2)
+    {
+        dx = x1 - x2;
+        
+        byte temp = x1;
+        x1 = x2;
+        x2 = temp;
+    }
+    
+    if ((pageId1 < MAX_PAGE_COUNT) && (pageId2 < MAX_PAGE_COUNT))
+    {
+        if (x1 >= SCREEN_WIDTH)
+        {
+            x1 = SCREEN_WIDTH - 1;
+        }
+        
+        if (x2 >= SCREEN_WIDTH)
+        {
+            x2 = SCREEN_WIDTH - 1;
+        }
+        
+        if (x1 == x2)
+        {
+            x2++; // give us one pixel width
+        }
+        
+        /* Utilizing the Bresenham algorithm */
+        int eps = 0;
+            
+        if (y1 < y2)
+        {
+            for (/* set above */; y1 < y2; y1++)
+            {
+                for (byte xCord = x1; xCord < x2; xCord++)
+                {
+                    m_screen[pageId1][xCord] |= bit1;
+                    
+                    eps += dy;
+                    
+                    if ((eps << 1) >= dx)
+                    {
+                        y1++;
+                        bit1 <<= 1;
+                        if (bit1 == 0)
+                        {
+                            pageId1++; // move to next page we just rolled
+                                
+                            bit1++; // back to bit 1 equal to 1
+                
+                            if (pageId1 >= MAX_PAGE_COUNT)
+                            {
+                                break; // done
+                            }
+                        }
+                        eps -= dx;
+                    }
+                }
+            }
+        }
+        else if (y1 == y2)
+        {
+            for (byte xCord = x1; xCord < x2; xCord++)
+            {
+                m_screen[pageId1][xCord] |= bit1;
+            }
+        }
+        else
+        {
+            dy = y1 - y2;
+            for (/* set above */; y1 > y2; y1--)
+            {
+                for (byte xCord = x1; xCord < x2; xCord++)
+                {
+                    m_screen[pageId2][xCord] |= bit2;
+                        
+                    eps += dy;
+                        
+                    if ((eps << 1) >= dx)
+                    {
+                        y1--;
+                        bit2 >>= 1;
+                            
+                        if (bit2 == 0)
+                        {
+                            pageId2--; // move to next page we just rolled
+                                
+                            bit2 = 0x80; // high order bit set and then will shift down to 0
+                                
+                            // if it rolled around
+                            if (pageId2 > MAX_PAGE_COUNT)
+                            {
+                                break; // done
+                            }
+                        }
+                        eps -= dx;
+                    }
+                }
             }
         }
     }
@@ -285,28 +539,43 @@ void sh1106_lcd::PrintData(char *data, bool incrementLine)
         {
             m_currentLine++;
         }
-        m_cursor = 2;
+        m_cursor = 0;
     }
 }
 
-byte sh1106_lcd::SendCommand(byte command)
+byte sh1106_lcd::SendCommand(byte command, SendState state)
 {
-    Wire.beginTransmission(SH1106_ADDR1);
-    Wire.write(SH1106_COMMAND);
-    Wire.write(command);
+    if (state == StartSend || state == Complete)
+    {
+        Wire.beginTransmission(SH1106_ADDR1);
+        Wire.write(SH1106_COMMAND);
+    }
     
-    byte transmissionStatus = Wire.endTransmission();
+    return SendByte(command, state);
+}
+
+byte sh1106_lcd::SendData(byte data, SendState state)
+{
+    if (state == StartSend || state == Complete)
+    {
+        Wire.beginTransmission(SH1106_ADDR1);
+        Wire.write(SH1106_DATA);
+    }
+    
+    return SendByte(data, state);
+}
+
+byte sh1106_lcd::SendByte(byte data, SendState state)
+{
+    Wire.write(data);
+
+    byte transmissionStatus = 0;
+    
+    if (state == FinishSend || state == Complete)
+    {
+        transmissionStatus = Wire.endTransmission();
+    }
     
     return transmissionStatus;
 }
 
-byte sh1106_lcd::SendData(byte data)
-{
-    Wire.beginTransmission(SH1106_ADDR1);
-    Wire.write(SH1106_DATAA);
-    Wire.write(data);
-    
-    byte transmissionStatus = Wire.endTransmission();
-    
-    return transmissionStatus;
-}
